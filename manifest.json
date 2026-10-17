@@ -1,0 +1,8 @@
+{
+  "name": "Knorvic i18n",
+  "description": "Switch Knorvic designs between English and Spanish using translations stored in the file.",
+  "version": 2,
+  "code": "plugin.js",
+  "icon": "icon.png",
+  "permissions": ["content:write"]
+}
