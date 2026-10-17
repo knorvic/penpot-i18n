@@ -9,9 +9,11 @@ The translations are stored inside each Penpot file, in the shared plugin data o
 
 1. In Penpot, open **Plugins** (`Ctrl+Alt+P`).
 2. Paste `https://knorvic.github.io/penpot-i18n/manifest.json` and click **Install**.
-3. Open the plugin in a file and pick **English** or **Español**.
+3. Open the plugin in a file:
+   - **Selected screens**: switches only the screens that contain the selection (instant, good for one flow).
+   - **Whole file**: switches every screen (Backoffice Web takes a few minutes).
 
-Switching rewrites the texts of the open file for everyone viewing it. Switch back to English when you are done.
+Switching rewrites the texts for everyone viewing the file. Switch back to English when you are done.
 
 ## Data model
 
@@ -21,7 +23,7 @@ Switching rewrites the texts of the open file for everyone viewing it. Switch ba
 | Text layer | `es` | Spanish text |
 | Text layer | `srcSpans` / `esSpans` | JSON paragraphs of style runs, only for multi-style texts |
 | Root board | `src` / `es` | Board name (shown in view mode) |
-| File | `lang` | Language currently shown (`en` by default) |
+| Text layer | `shown` | Language currently shown when it is not English |
 
 - When switching to Spanish, texts whose English changed after translating are kept in English
   and counted as "changed since translating".

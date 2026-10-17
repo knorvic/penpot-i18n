@@ -5,58 +5,80 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Knorvic i18n</title>
 <style>
-  :root { --bg: #ffffff; --fg: #1b2228; --muted: #6b7781; --line: #e3e7ea; --accent: #00756a; --accent-fg: #ffffff; --chip: #f1f4f6; }
-  :root[data-theme="dark"] { --bg: #18191d; --fg: #e8ecef; --muted: #8f9aa3; --line: #2e3238; --accent: #31c6b4; --accent-fg: #06221f; --chip: #24272c; }
+  :root { --bg: #ffffff; --fg: #1b2228; --muted: #6b7781; --line: #e3e7ea; --accent: #00756a; --accent-fg: #ffffff; --chip: #f1f4f6; --danger: #d1453b; }
+  :root[data-theme="dark"] { --bg: #18191d; --fg: #e8ecef; --muted: #8f9aa3; --line: #2e3238; --accent: #31c6b4; --accent-fg: #06221f; --chip: #24272c; --danger: #ff7a70; }
   * { box-sizing: border-box; }
   body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  h1 { font-size: 14px; margin: 0 0 4px; }
+  h1 { font-size: 14px; margin: 0 0 2px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
   .file { color: var(--muted); margin-bottom: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .langs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
-  button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--fg); border-radius: 10px; padding: 12px 8px; cursor: pointer; }
-  button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
-  button:disabled { opacity: .5; cursor: progress; }
-  .stats { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 6px; }
-  .row { display: flex; justify-content: space-between; }
-  .row span:last-child { font-variant-numeric: tabular-nums; font-weight: 600; }
-  .note { color: var(--muted); font-size: 12px; margin-top: 14px; }
-  .status { min-height: 18px; margin-bottom: 8px; color: var(--muted); }
-  .status.error { color: #d1453b; }
-  .link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
+  section { border-top: 1px solid var(--line); padding: 12px 0; }
+  .langs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--fg); border-radius: 10px; padding: 10px 8px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .summary { color: var(--muted); font-size: 12px; min-height: 17px; }
+  .status { min-height: 18px; color: var(--muted); margin: 4px 0 0; }
+  .status.error { color: var(--danger); }
+  .link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 12px; }
+  .note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
 </style>
 </head>
 <body>
   <h1>Language</h1>
   <div class="file" id="file">Loading…</div>
-  <div class="langs" id="langs"></div>
+
+  <section>
+    <h2>Selected screens</h2>
+    <div class="langs" data-scope="selection"></div>
+    <div class="summary" id="sel-summary"></div>
+  </section>
+
+  <section>
+    <h2>Whole file</h2>
+    <div class="langs" data-scope="file"></div>
+    <div class="summary" id="file-summary"></div>
+    <button class="link" id="refresh" type="button">Recount</button>
+  </section>
+
   <div class="status" id="status"></div>
-  <div class="stats" id="stats" hidden>
-    <div class="row"><span>Translated texts</span><span id="translated">0</span></div>
-    <div class="row"><span>Changed since translating</span><span id="outdated">0</span></div>
-    <div class="row"><span>Without translation</span><span id="missing">0</span></div>
-    <div><button class="link" id="refresh" type="button">Recount</button></div>
-  </div>
-  <p class="note">English is the source. Switching changes the file for everyone viewing it, so switch back to English when you are done.</p>
+  <p class="note">English is the source. Switching changes the design for everyone viewing it. Switch back to English when you are done.</p>
 <script>
   const params = new URLSearchParams(location.search);
   document.documentElement.dataset.theme = params.get('theme') || 'light';
   const $ = id => document.getElementById(id);
   let busy = false;
-  let current = 'en';
+  let state = null;
 
   function post(msg) { parent.postMessage(msg, '*'); }
 
-  function renderLangs(langs) {
-    const box = $('langs');
-    box.innerHTML = '';
-    for (const [code, label] of Object.entries(langs)) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = label;
-      b.setAttribute('aria-pressed', String(code === current));
-      b.disabled = busy;
-      b.onclick = () => { if (!busy && code !== current) post({ type: 'set-lang', lang: code }); };
-      box.appendChild(b);
+  function summary(s, langs) {
+    const parts = Object.entries(langs).map(([code, label]) => `${s.shown[code] || 0} ${label}`);
+    if (s.outdated) parts.push(`${s.outdated} changed since translating`);
+    if (s.missing) parts.push(`${s.missing} without translation`);
+    return parts.join(' · ');
+  }
+
+  function render() {
+    if (!state) return;
+    for (const box of document.querySelectorAll('.langs')) {
+      const scope = box.dataset.scope;
+      const empty = scope === 'selection' && !state.selection.screens;
+      box.innerHTML = '';
+      for (const [code, label] of Object.entries(state.langs)) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.disabled = busy || empty;
+        b.onclick = () => post({ type: 'set-lang', lang: code, scope });
+        box.appendChild(b);
+      }
     }
+    const sel = state.selection;
+    $('sel-summary').textContent = sel.screens
+      ? `${sel.screens} screen${sel.screens > 1 ? 's' : ''} · ${summary(sel, state.langs)}`
+      : 'Select one or more screens (or anything inside them).';
+    $('file-summary').textContent = `${state.fileStats.screens} screens · ${summary(state.fileStats, state.langs)}`;
   }
 
   window.addEventListener('message', ev => {
@@ -65,19 +87,15 @@
     if (m.type === 'theme') document.documentElement.dataset.theme = m.theme;
     if (m.type === 'state') {
       if (!m.file) { $('file').textContent = 'Open a file to switch its language.'; return; }
-      current = m.stats.lang;
+      state = m;
       $('file').textContent = m.file;
-      renderLangs(m.langs);
-      $('stats').hidden = false;
-      $('translated').textContent = m.stats.translated;
-      $('outdated').textContent = m.stats.outdated;
-      $('missing').textContent = m.stats.missing;
+      render();
     }
     if (m.type === 'busy') {
       busy = true;
       $('status').className = 'status';
       $('status').textContent = 'Switching…';
-      document.querySelectorAll('#langs button').forEach(b => b.disabled = true);
+      render();
     }
     if (m.type === 'progress' && busy) {
       const pct = m.total ? Math.round(100 * m.done / m.total) : 0;
@@ -87,11 +105,13 @@
       busy = false;
       const r = m.result;
       $('status').textContent = `Done · ${r.changed} texts switched` + (r.kept ? ` · ${r.kept} kept as they are` : '');
+      render();
     }
     if (m.type === 'error') {
       busy = false;
       $('status').className = 'status error';
       $('status').textContent = 'Error: ' + m.message;
+      render();
     }
   });
 

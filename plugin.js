@@ -1,38 +1,54 @@
-// Knorvic i18n — Penpot plugin that switches the open file between English and other languages.
+// Knorvic i18n — Penpot plugin that switches Knorvic designs between English and other languages.
 //
 // Translations are stored inside the file itself, in each text layer's shared plugin data
 // (namespace "knorvic-i18n"), so this plugin only contains the switching logic:
 //   src                  English text the translation was made from
 //   <lang>               translated text (e.g. "es")
 //   srcSpans/<lang>Spans JSON [[leaf, ...], ...] per paragraph, only for multi-style texts
+//   shown                language the layer currently shows when it is not English
 // Root boards store "src" and "<lang>" for their names, so view mode shows translated screen names.
-// The file-level key "lang" records the language currently shown ("en" by default).
+// A switch applies to the selected screens or to the whole file.
 
 const NS = 'knorvic-i18n';
 const LANGS = { en: 'English', es: 'Español' };
 const STYLE_KEYS = ['fontId', 'fontFamily', 'fontVariantId', 'fontSize', 'fontWeight', 'fontStyle',
   'lineHeight', 'letterSpacing', 'textTransform', 'textDecoration', 'fills'];
+const BATCH = 150;
 
-function allShapes(pred) {
+const pause = () => new Promise(resolve => setTimeout(resolve, 0));
+
+function get(s, k) { return s.getSharedPluginData(NS, k) || ''; }
+
+function textsIn(roots) {
   const out = [];
-  for (const page of penpot.currentFile.pages) {
-    const stack = [page.root];
-    while (stack.length) {
-      const s = stack.pop();
-      if (pred(s)) out.push(s);
-      if (s.children) for (const c of s.children) stack.push(c);
-    }
+  const stack = [...roots];
+  while (stack.length) {
+    const s = stack.pop();
+    if (s.type === 'text') out.push(s);
+    if (s.children) for (const c of s.children) stack.push(c);
   }
   return out;
 }
 
-function rootBoards() {
-  return penpot.currentFile.pages.flatMap(p => p.root.children.filter(s => s.type === 'board'));
+function pageBoards(page) { return page.root.children.filter(s => s.type === 'board'); }
+
+// Top-level boards (screens) that contain the current selection.
+function selectedScreens() {
+  const rootId = penpot.currentPage.root.id;
+  const screens = new Map();
+  for (const s of penpot.selection) {
+    let c = s;
+    while (c.parent && c.parent.id !== rootId) c = c.parent;
+    if (c.parent && c.type === 'board') screens.set(c.id, c);
+  }
+  return [...screens.values()];
 }
 
-function get(s, k) { return s.getSharedPluginData(NS, k) || ''; }
+function scopeBoards(scope) {
+  return scope === 'selection' ? selectedScreens() : penpot.currentFile.pages.flatMap(pageBoards);
+}
 
-function currentLang() { return penpot.currentFile.getSharedPluginData(NS, 'lang') || 'en'; }
+function shownLang(t) { return get(t, 'shown') || 'en'; }
 
 function textIn(t, lang) { return lang === 'en' ? get(t, 'src') : get(t, lang); }
 
@@ -81,39 +97,32 @@ function writeText(t, fromLang, toLang) {
   }
 }
 
-function stats() {
-  const lang = currentLang();
-  const counts = { lang, translated: 0, outdated: 0, missing: 0 };
-  for (const t of allShapes(s => s.type === 'text')) {
+function stats(scope) {
+  const boards = scopeBoards(scope);
+  const counts = { screens: boards.length, shown: {}, outdated: 0, missing: 0 };
+  for (const code of Object.keys(LANGS)) counts.shown[code] = 0;
+  for (const t of textsIn(boards)) {
     if (!/[A-Za-z]/.test(t.characters)) continue;
-    const src = get(t, 'src');
-    if (!src) { counts.missing++; continue; }
-    if (lang === 'en') {
-      if (t.characters !== src) counts.outdated++;          // English edited after translating
-      else if (!get(t, 'es')) counts.missing++;
-      else counts.translated++;
-    } else if (t.characters === textIn(t, lang)) counts.translated++;
+    if (!get(t, 'src')) { counts.missing++; continue; }
+    const lang = shownLang(t);
+    if (t.characters === textIn(t, lang)) counts.shown[lang] = (counts.shown[lang] || 0) + 1;
     else counts.outdated++;
   }
   return counts;
 }
 
-const BATCH = 150;
-const pause = () => new Promise(resolve => setTimeout(resolve, 0));
-
 // Switches in batches and yields between them so Penpot stays responsive on big files.
-async function setLang(lang, onProgress) {
-  const cur = currentLang();
-  if (cur === lang) return { lang, changed: 0, kept: 0 };
+async function setLang(lang, scope, onProgress) {
+  const boards = scopeBoards(scope);
+  const texts = textsIn(boards);
   let changed = 0, kept = 0;
-  const texts = allShapes(s => s.type === 'text');
   for (let i = 0; i < texts.length; i++) {
     if (i % BATCH === 0) { onProgress(i, texts.length); await pause(); }
     const t = texts[i];
-    const src = get(t, 'src');
-    if (!src) continue;
-    const shownText = textIn(t, cur);
-    if (t.characters !== shownText) {
+    if (!get(t, 'src')) continue;
+    const cur = shownLang(t);
+    if (cur === lang) continue;
+    if (t.characters !== textIn(t, cur)) {
       if (cur === 'en') { kept++; continue; }               // English changed since translating: keep it
       // Edited while showing a translation: keep the edit as the new translation.
       t.setSharedPluginData(NS, cur, t.characters);
@@ -122,36 +131,46 @@ async function setLang(lang, onProgress) {
     const target = textIn(t, lang);
     if (!target) { kept++; continue; }                       // no translation for this language yet
     if (t.characters !== target) { writeText(t, cur, lang); changed++; }
+    t.setSharedPluginData(NS, 'shown', lang === 'en' ? '' : lang);
+  }
+  for (const b of boards) {
+    const name = textIn(b, lang);
+    if (name && b.name !== name && Object.keys(LANGS).some(l => textIn(b, l) === b.name)) b.name = name;
   }
   onProgress(texts.length, texts.length);
-  for (const b of rootBoards()) {
-    const from = textIn(b, cur), to = textIn(b, lang);
-    if (from && to && b.name === from) b.name = to;
-  }
-  penpot.currentFile.setSharedPluginData(NS, 'lang', lang);
   return { lang, changed, kept };
 }
 
+let busy = false;
+let fileStats = null;
+
 function send(type, data) { penpot.ui.sendMessage({ type, ...data }); }
 
-function refresh() {
+// Whole-file counts walk every text layer, so they are only recomputed on demand or after a switch.
+function refresh(full) {
+  if (busy) return;
   if (!penpot.currentFile) { send('state', { file: null }); return; }
-  send('state', { file: penpot.currentFile.name, langs: LANGS, stats: stats() });
+  if (full || !fileStats) fileStats = stats('file');
+  send('state', { file: penpot.currentFile.name, langs: LANGS, selection: stats('selection'), fileStats });
 }
 
-penpot.ui.open('Knorvic i18n', `ui.html?theme=${penpot.theme}`, { width: 300, height: 380 });
+penpot.ui.open('Knorvic i18n', `ui.html?theme=${penpot.theme}`, { width: 320, height: 470 });
 
 penpot.ui.onMessage(msg => {
   if (!msg || typeof msg !== 'object') return;
-  if (msg.type === 'ready' || msg.type === 'refresh') refresh();
-  if (msg.type === 'set-lang' && LANGS[msg.lang]) {
-    send('busy', { lang: msg.lang });
-    setLang(msg.lang, (done, total) => send('progress', { done, total }))
+  if (msg.type === 'ready' || msg.type === 'refresh') refresh(true);
+  if (msg.type === 'set-lang' && LANGS[msg.lang] && !busy) {
+    const scope = msg.scope === 'selection' ? 'selection' : 'file';
+    busy = true;
+    send('busy', { lang: msg.lang, scope });
+    setLang(msg.lang, scope, (done, total) => send('progress', { done, total }))
       .then(result => send('done', { result }))
       .catch(e => send('error', { message: String(e && e.message || e) }))
-      .finally(refresh);
+      .finally(() => { busy = false; refresh(true); });
   }
 });
 
-penpot.on('filechange', refresh);
+penpot.on('filechange', () => refresh(true));
+penpot.on('pagechange', () => refresh(false));
+penpot.on('selectionchange', () => refresh(false));
 penpot.on('themechange', theme => send('theme', { theme }));
