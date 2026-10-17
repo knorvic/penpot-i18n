@@ -76,8 +76,12 @@
     if (m.type === 'busy') {
       busy = true;
       $('status').className = 'status';
-      $('status').textContent = 'Switching… this can take up to a minute.';
+      $('status').textContent = 'Switching…';
       document.querySelectorAll('#langs button').forEach(b => b.disabled = true);
+    }
+    if (m.type === 'progress' && busy) {
+      const pct = m.total ? Math.round(100 * m.done / m.total) : 0;
+      $('status').textContent = `Switching… ${pct}% (${m.done} / ${m.total} texts)`;
     }
     if (m.type === 'done') {
       busy = false;

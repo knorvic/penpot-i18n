@@ -98,11 +98,18 @@ function stats() {
   return counts;
 }
 
-function setLang(lang) {
+const BATCH = 150;
+const pause = () => new Promise(resolve => setTimeout(resolve, 0));
+
+// Switches in batches and yields between them so Penpot stays responsive on big files.
+async function setLang(lang, onProgress) {
   const cur = currentLang();
   if (cur === lang) return { lang, changed: 0, kept: 0 };
   let changed = 0, kept = 0;
-  for (const t of allShapes(s => s.type === 'text')) {
+  const texts = allShapes(s => s.type === 'text');
+  for (let i = 0; i < texts.length; i++) {
+    if (i % BATCH === 0) { onProgress(i, texts.length); await pause(); }
+    const t = texts[i];
     const src = get(t, 'src');
     if (!src) continue;
     const shownText = textIn(t, cur);
@@ -116,6 +123,7 @@ function setLang(lang) {
     if (!target) { kept++; continue; }                       // no translation for this language yet
     if (t.characters !== target) { writeText(t, cur, lang); changed++; }
   }
+  onProgress(texts.length, texts.length);
   for (const b of rootBoards()) {
     const from = textIn(b, cur), to = textIn(b, lang);
     if (from && to && b.name === from) b.name = to;
@@ -138,16 +146,10 @@ penpot.ui.onMessage(msg => {
   if (msg.type === 'ready' || msg.type === 'refresh') refresh();
   if (msg.type === 'set-lang' && LANGS[msg.lang]) {
     send('busy', { lang: msg.lang });
-    // Let the UI paint the busy state before the long synchronous switch.
-    setTimeout(() => {
-      try {
-        const result = setLang(msg.lang);
-        send('done', { result });
-      } catch (e) {
-        send('error', { message: String(e && e.message || e) });
-      }
-      refresh();
-    }, 50);
+    setLang(msg.lang, (done, total) => send('progress', { done, total }))
+      .then(result => send('done', { result }))
+      .catch(e => send('error', { message: String(e && e.message || e) }))
+      .finally(refresh);
   }
 });
 
