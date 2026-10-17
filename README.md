@@ -11,7 +11,7 @@ The translations are stored inside each Penpot file, in the shared plugin data o
 2. Paste `https://knorvic.github.io/penpot-i18n/manifest.json` and click **Install**.
 3. Open the plugin in a file:
    - **Selected screens**: switches only the screens that contain the selection (instant, good for one flow).
-   - **Whole file**: switches every screen (Backoffice Web takes a few minutes).
+   - **Whole file**: switches every screen (Backoffice Web takes about 4 minutes).
 
 Switching rewrites the texts for everyone viewing the file. Switch back to English when you are done.
 

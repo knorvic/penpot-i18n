@@ -116,6 +116,32 @@ async function setLang(lang, scope, onProgress) {
   const boards = scopeBoards(scope);
   const texts = textsIn(boards);
   let changed = 0, kept = 0;
+  // Rendering every rewritten text is the slowest part: look at an empty area while switching.
+  const view = { center: penpot.viewport.center, zoom: penpot.viewport.zoom };
+  const selection = penpot.selection;
+  if (texts.length > BATCH) {
+    penpot.selection = [];
+    penpot.viewport.center = { x: -200000, y: -200000 };
+  }
+  try {
+    ({ changed, kept } = await switchTexts(texts, lang, onProgress));
+  } finally {
+    if (texts.length > BATCH) {
+      penpot.viewport.center = view.center;
+      penpot.viewport.zoom = view.zoom;
+      penpot.selection = selection;
+    }
+  }
+  for (const b of boards) {
+    const name = textIn(b, lang);
+    if (name && b.name !== name && Object.keys(LANGS).some(l => textIn(b, l) === b.name)) b.name = name;
+  }
+  onProgress(texts.length, texts.length);
+  return { lang, changed, kept };
+}
+
+async function switchTexts(texts, lang, onProgress) {
+  let changed = 0, kept = 0;
   for (let i = 0; i < texts.length; i++) {
     if (i % BATCH === 0) { onProgress(i, texts.length); await pause(); }
     const t = texts[i];
@@ -133,12 +159,7 @@ async function setLang(lang, scope, onProgress) {
     if (t.characters !== target) { writeText(t, cur, lang); changed++; }
     t.setSharedPluginData(NS, 'shown', lang === 'en' ? '' : lang);
   }
-  for (const b of boards) {
-    const name = textIn(b, lang);
-    if (name && b.name !== name && Object.keys(LANGS).some(l => textIn(b, l) === b.name)) b.name = name;
-  }
-  onProgress(texts.length, texts.length);
-  return { lang, changed, kept };
+  return { changed, kept };
 }
 
 let busy = false;
