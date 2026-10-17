@@ -59,19 +59,23 @@
     return parts.join(' · ');
   }
 
+  // Buttons are created once and only updated, so a click is never lost to a re-render.
   function render() {
     if (!state) return;
     for (const box of document.querySelectorAll('.langs')) {
       const scope = box.dataset.scope;
       const empty = scope === 'selection' && !state.selection.screens;
-      box.innerHTML = '';
       for (const [code, label] of Object.entries(state.langs)) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = label;
+        let b = box.querySelector(`[data-lang="${code}"]`);
+        if (!b) {
+          b = document.createElement('button');
+          b.type = 'button';
+          b.dataset.lang = code;
+          b.textContent = label;
+          b.onclick = () => post({ type: 'set-lang', lang: code, scope });
+          box.appendChild(b);
+        }
         b.disabled = busy || empty;
-        b.onclick = () => post({ type: 'set-lang', lang: code, scope });
-        box.appendChild(b);
       }
     }
     const sel = state.selection;
@@ -88,6 +92,7 @@
     if (m.type === 'state') {
       if (!m.file) { $('file').textContent = 'Open a file to switch its language.'; return; }
       state = m;
+      if (m.theme) document.documentElement.dataset.theme = m.theme;
       $('file').textContent = m.file;
       render();
     }

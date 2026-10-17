@@ -172,7 +172,9 @@ function refresh(full) {
   if (busy) return;
   if (!penpot.currentFile) { send('state', { file: null }); return; }
   if (full || !fileStats) fileStats = stats('file');
-  send('state', { file: penpot.currentFile.name, langs: LANGS, selection: stats('selection'), fileStats });
+  send('state', {
+    file: penpot.currentFile.name, theme: penpot.theme, langs: LANGS, selection: stats('selection'), fileStats,
+  });
 }
 
 penpot.ui.open('Knorvic i18n', `ui.html?theme=${penpot.theme}`, { width: 320, height: 470 });
