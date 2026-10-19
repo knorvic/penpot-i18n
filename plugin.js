@@ -95,6 +95,16 @@ function writeText(t, fromLang, toLang) {
   } else {
     t.characters = textIn(t, toLang);
   }
+  remeasure(t);
+}
+
+// Penpot keeps the old box of auto-sized texts when the plugin rewrites them: toggling the grow type
+// makes it measure the new text, so buttons and other hug containers resize to the new language.
+function remeasure(t) {
+  const grow = t.growType;
+  if (grow !== 'auto-width' && grow !== 'auto-height') return;
+  t.growType = 'fixed';
+  t.growType = grow;
 }
 
 function stats(scope) {
